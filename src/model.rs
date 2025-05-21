@@ -1,0 +1,100 @@
+use burn::{
+    nn::{
+        Embedding, EmbeddingConfig, Gelu, LayerNorm, Linear, LinearConfig,
+        attention::MultiHeadAttention, PositionalEncoding,
+    },
+    prelude::*,
+};
+use nn::{
+    attention::{generate_autoregressive_mask, MhaInput, MultiHeadAttentionConfig}, LayerNormConfig, PositionalEncodingConfig
+};
+
+#[derive(Module, Debug)]
+pub struct TrafoBlock<B: Backend> {
+    ln_atn: LayerNorm<B>,
+    atn: MultiHeadAttention<B>,
+    ln_ff: LayerNorm<B>,
+    ff1: Linear<B>,
+    act: Gelu,
+    ff2: Linear<B>,
+}
+
+impl<B: Backend> TrafoBlock<B> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let [batch_size, seq_length, _embed_dim] = x.dims();
+	let dev = x.device();
+
+        let x_ln_atn = self.ln_atn.forward(x.clone());
+	let x_atn_input = MhaInput::self_attn(x_ln_atn).mask_attn(
+            generate_autoregressive_mask(batch_size, seq_length, &dev),
+	);
+
+        let x_atn = self.atn.forward(x_atn_input).context;
+	let x_with_atn = x + x_atn;
+
+        let x_ln_ff = self.ln_ff.forward(x_with_atn.clone());
+        let x_ff1_act = self.act.forward(self.ff1.forward(x_ln_ff));
+        let x_ff2 = self.ff2.forward(x_ff1_act);
+
+	return x_with_atn + x_ff2;
+    }
+}
+
+#[derive(Module, Debug)]
+pub struct Transformer<B: Backend> {
+    tok_emb: Embedding<B>,
+    pos_enc: PositionalEncoding<B>,
+    blocks: Vec<TrafoBlock<B>>,
+    unembed: Linear<B>,
+}
+
+impl <B: Backend> Transformer<B> {
+    pub fn forward(&self, x: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+	let x_tok_emb = self.tok_emb.forward(x);
+	let x_pos_enc = self.pos_enc.forward(x_tok_emb);
+
+	let x_blocks = self.blocks.iter().fold(x_pos_enc, |h, block| block.forward(h));
+
+	let logits = self.unembed.forward(x_blocks);
+
+	logits
+    }
+}
+
+#[derive(Config, Debug)]
+pub struct ModelConfig {
+    pub ctx_size: usize,
+    pub vocab_size: usize,
+    pub embed_dim: usize,
+    pub num_blocks: usize,
+    pub num_heads: usize,
+    pub ff_dim: usize,
+}
+
+impl ModelConfig {
+    pub fn init_trafo_block<B: Backend>(&self, device: &B::Device) -> TrafoBlock<B> {
+        TrafoBlock {
+            ln_atn: LayerNormConfig::new(self.embed_dim).init(device),
+            atn: MultiHeadAttentionConfig::new(self.embed_dim, self.num_heads).init(device),
+            ln_ff: LayerNormConfig::new(self.embed_dim).init(device),
+            ff1: LinearConfig::new(self.embed_dim, self.ff_dim).init(device),
+            act: Gelu::new(),
+            ff2: LinearConfig::new(self.ff_dim, self.embed_dim).init(device),
+        }
+    }
+
+    pub fn init_transformer<B: Backend>(&self, device: &B::Device) -> Transformer<B> {
+        let blocks = (0..self.num_blocks)
+            .map(|_| self.init_trafo_block(device))
+            .collect();
+
+        Transformer {
+            tok_emb: EmbeddingConfig::new(self.vocab_size, self.embed_dim).init(device),
+            pos_enc: PositionalEncodingConfig::new(self.embed_dim).init(device),
+            blocks,
+            unembed: LinearConfig::new(self.embed_dim, self.vocab_size)
+                .with_bias(false)
+                .init(device),
+        }
+    }
+}
