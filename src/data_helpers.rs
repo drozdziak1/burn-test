@@ -1,5 +1,9 @@
 use anyhow::{Result, anyhow, bail};
-use burn::data::dataloader::BatchStrategy;
+use burn::{
+    data::dataloader::{BatchStrategy, batcher::Batcher},
+    prelude::Backend,
+    tensor::{Int, Tensor, s},
+};
 use hf_hub::api::sync::ApiRepo;
 use log::{debug, warn};
 use polars::prelude::*;
@@ -232,16 +236,15 @@ impl<T: Send + Clone + 'static> BatchStrategy<Vec<T>> for PackedBatchStrategy<T>
         let mut batch: Vec<Vec<T>> = Vec::new();
 
         for buf in self.buffers.iter_mut() {
+            // Skip incomplete buffers to avoid split_at panic (only possible if force)
+            if force && buf.len() < self.batch_item_size {
+                continue;
+            }
 
-	    // Skip incomplete buffers to avoid split_at panic (only possible if force)
-	    if force && buf.len() < self.batch_item_size {
-		continue;
-	    }
+            let (new_batch_item, new_buf) = buf.split_at(self.batch_item_size);
 
-	    let (new_batch_item, new_buf) = buf.split_at(self.batch_item_size);
-
-	    batch.push(new_batch_item.to_vec());
-	    *buf = new_buf.to_vec();
+            batch.push(new_batch_item.to_vec());
+            *buf = new_buf.to_vec();
         }
 
         Some(batch)
@@ -253,5 +256,34 @@ impl<T: Send + Clone + 'static> BatchStrategy<Vec<T>> for PackedBatchStrategy<T>
             self.batch_item_size,
             self.delim.clone(),
         ))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FinewebBatch<B: Backend> {
+    pub x: Tensor<B, 2, Int>,
+    pub y_gt: Tensor<B, 2, Int>,
+}
+
+#[derive(Clone, Default)]
+pub struct FinewebBatcher;
+
+impl<B: Backend> Batcher<B, Vec<u32>, FinewebBatch<B>> for FinewebBatcher {
+    fn batch(&self, items: Vec<Vec<u32>>, device: &B::Device) -> FinewebBatch<B> {
+        let tensors_vec = items
+            .iter()
+            .map(|item| {
+                let t: Tensor<B, 2, Int> = Tensor::from_ints(item.as_slice(), device);
+
+                t.unsqueeze()
+            })
+            .collect();
+
+        let t: Tensor<B, 2, _> = Tensor::cat(tensors_vec, 0);
+
+        let x = t.clone().slice(s![.., ..-1]);
+        let y_gt = t.slice(s![.., 1..]);
+
+        FinewebBatch { x, y_gt }
     }
 }
