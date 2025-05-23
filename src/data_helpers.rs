@@ -229,13 +229,19 @@ impl<T: Send + Clone + 'static> BatchStrategy<Vec<T>> for PackedBatchStrategy<T>
             }
         }
 
-        let mut batch: Vec<Vec<T>> = Vec::with_capacity(self.batch_size.into());
+        let mut batch: Vec<Vec<T>> = Vec::new();
 
-        for (buf, batch_item) in self.buffers.iter_mut().zip(batch.iter_mut()) {
-            let (new_batch_item, new_buf) = buf.split_at(self.batch_item_size);
+        for buf in self.buffers.iter_mut() {
 
-            *batch_item = new_batch_item.to_vec();
-            *buf = new_buf.to_vec();
+	    // Skip incomplete buffers to avoid split_at panic (only possible if force)
+	    if force && buf.len() < self.batch_item_size {
+		continue;
+	    }
+
+	    let (new_batch_item, new_buf) = buf.split_at(self.batch_item_size);
+
+	    batch.push(new_batch_item.to_vec());
+	    *buf = new_buf.to_vec();
         }
 
         Some(batch)
