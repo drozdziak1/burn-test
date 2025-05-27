@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-burn = { version = "~0.17", features = ["dataset", "train", "cuda", "autotune", "fusion"] }
+burn = { version = "~0.17", features = ["dataset", "train", "cuda", "autotune", "fusion", "sqlite-bundled"] }
 hf-hub = "0.4.2"
 log = "0.4.27"
 polars = {version = "0.48.1", features = ["parquet", "lazy"]}
-tokenizers = "0.21.1"
+tokenizers = {version = "0.21.1", features = ["http"]}

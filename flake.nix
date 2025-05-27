@@ -21,6 +21,7 @@
           cudaSupport = true;
         };
       };
+      python-env = pkgs.python3.withPackages (ps: with ps; []);
       in
     {
       devShell = pkgs.mkShell rec {
@@ -31,8 +32,11 @@
           openssl.dev
           pkg-config
           cargo-watch
+          python-env
           rust-bin.stable."1.86.0".default
           rust-analyzer
+          stdenv.cc.cc.lib
+          sqlite
         ];
         CUDA_TOOLKIT_ROOT_DIR=pkgs.cudatoolkit.out;
         CUDNN_LIB=pkgs.cudaPackages.cudnn.dev;

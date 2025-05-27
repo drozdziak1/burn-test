@@ -6171,6 +6171,7 @@ dependencies = [
  "derive_builder",
  "esaxx-rs",
  "getrandom 0.2.16",
+ "hf-hub",
  "indicatif",
  "itertools 0.13.0",
  "lazy_static",
