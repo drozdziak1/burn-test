@@ -30,14 +30,24 @@ use crate::{
 
 impl<B: AutodiffBackend> TrainStep<FinewebBatch<B>, ClassificationOutput<B>> for Transformer<B> {
     fn step(&self, batch: FinewebBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
+	println!("train: before forward_classification");
         let item = self.forward_classification(batch.x, batch.y_gt);
 
-        TrainOutput::new(self, item.loss.backward(), item)
+	println!("train: before gradients");
+	let grads = item.loss.backward();
+	println!("train: after gradients");
+
+        println!("train: before output constructor");
+	let out = TrainOutput::new(self, grads, item);
+        println!("train: after output constructor");
+
+	out
     }
 }
 
 impl<B: Backend> ValidStep<FinewebBatch<B>, ClassificationOutput<B>> for Transformer<B> {
     fn step(&self, batch: FinewebBatch<B>) -> ClassificationOutput<B> {
+	println!("valid: before forward_classification");
         self.forward_classification(batch.x, batch.y_gt)
     }
 }
@@ -50,9 +60,9 @@ pub struct TrainingConfig {
     pub num_epochs: usize,
     #[config(default = 100)]
     pub num_test_epochs: usize,
-    #[config(default = 64)]
+    #[config(default = 2)]
     pub batch_size: usize,
-    #[config(default = 32)]
+    #[config(default = 4)]
     pub num_workers: usize,
     #[config(default = 0xdeadbeef)]
     pub rng_seed: u64,
@@ -82,12 +92,13 @@ pub fn train<B: AutodiffBackend>(
 
     let full_dataset = HuggingfaceDatasetLoader::new("HuggingFaceFW/fineweb")
         .with_subset("sample-10BT")
+	.with_use_python_venv(false)
         .dataset("train")
         .expect("Could not load dataset");
 
     let tokenizer = Tokenizer::from_pretrained("gpt2", None).expect("Could not load tokenizer");
     let delim = tokenizer
-        .encode("<|end_of_text|>", true)
+        .encode("<|endoftext|>", true)
         .expect("Could not encode delim")
         .get_ids()[0];
 
@@ -97,10 +108,10 @@ pub fn train<B: AutodiffBackend>(
 
     let dataset_train = PartialDataset::new(
         tokenized_dataset.clone(),
-        config.num_test_epochs + 1,
-        config.num_epochs + config.num_test_epochs,
+        config.num_test_epochs * config.batch_size + 1,
+        config.num_epochs + config.num_test_epochs * config.batch_size,
     );
-    let dataset_test = PartialDataset::new(tokenized_dataset, 0, config.num_test_epochs);
+    let dataset_test = PartialDataset::new(tokenized_dataset, 0, config.num_test_epochs * config.batch_size);
 
     let dataloader_train = MultiThreadDataLoader::new(
         Box::new(PackedBatchStrategy::new(

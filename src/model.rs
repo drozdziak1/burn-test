@@ -69,15 +69,18 @@ impl<B: Backend> Transformer<B> {
         x: Tensor<B, 2, Int>,
         y_gt: Tensor<B, 2, Int>,
     ) -> ClassificationOutput<B> {
-        let y_hat = self.forward(x).flatten(0, 1);
+        let y_hat = self.forward(x);
+	println!("y_hat shape: {:?}", y_hat.dims());
+
+	let y_hat_flattened = y_hat.flatten(0, 1);
 
 	let y_gt_reshaped = y_gt.reshape([-1]);
 
         let loss = CrossEntropyLossConfig::new()
-            .init(&y_hat.device())
-            .forward(y_hat.clone(), y_gt_reshaped.clone());
+            .init(&y_hat_flattened.device())
+            .forward(y_hat_flattened.clone(), y_gt_reshaped.clone());
 
-        ClassificationOutput::new(loss, y_hat, y_gt_reshaped)
+        ClassificationOutput::new(loss, y_hat_flattened, y_gt_reshaped)
     }
 }
 

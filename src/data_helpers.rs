@@ -13,33 +13,6 @@ use std::{fs::File, io::Read, num::NonZeroUsize, path::PathBuf};
 
 use burn::data::dataset::HuggingfaceDatasetLoader;
 
-pub struct HFDataset {
-
-}
-
-impl HFDataset {
-    pub fn new(name: &str, mut subset: &str, split: &str) -> Result<Self> {
-	if subset.is_empty() {
-	    subset = "default";
-	}
-
-	let api = Api::new()?;
-
-	let repo = api.dataset(name.to_string());
-
-	let readme_path = repo.get("README.md")?;
-
-	let mut readme_text = String::new();
-	File::open(readme_path)?.read_to_string(&mut readme_text)?;
-
-	if let Some(yaml_chunk) = readme_text.split("---").nth(1) {
-	    println!("{yaml_chunk}");
-	}
-	
-	unimplemented!();
-    }
-}
-
 pub struct PackedBatchStrategy<T> {
     batch_size: NonZeroUsize,
     batch_item_size: usize,
@@ -131,7 +104,7 @@ impl<B: Backend> Batcher<B, Vec<u32>, FinewebBatch<B>> for FinewebBatcher {
         let tensors_vec = items
             .iter()
             .map(|item| {
-                let t: Tensor<B, 2, Int> = Tensor::from_ints(item.as_slice(), device);
+                let t: Tensor<B, 1, Int> = Tensor::from_ints(item.as_slice(), device);
 
                 t.unsqueeze()
             })
@@ -163,17 +136,5 @@ impl Mapper<String, Vec<u32>> for FinewebMapper {
     fn map(&self, item: &String) -> Vec<u32> {
 
 	self.tokenizer.encode(item.as_str(), true).expect("Could not map using tokenizer").get_ids().to_vec()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hfdataset_happy_path() -> Result<()> {
-        let hfds = HFDataset::new("HuggingFaceFW/fineweb", "sample-10BT", "train")?;
-
-	Ok(())
     }
 }
