@@ -71,9 +71,9 @@ impl<B: Backend> Transformer<B> {
     ) -> ClassificationOutput<B> {
         let y_hat = self.forward(x);
 
-	let y_hat_flattened = y_hat.flatten(0, 1);
+        let y_hat_flattened = y_hat.flatten(0, 1);
 
-	let y_gt_reshaped = y_gt.reshape([-1]);
+        let y_gt_reshaped = y_gt.reshape([-1]);
 
         let loss = CrossEntropyLossConfig::new()
             .init(&y_hat_flattened.device())
