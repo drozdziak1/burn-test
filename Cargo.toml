@@ -15,10 +15,4 @@ burn = {path = "/home/drozdziak1/code/rust/burn/crates/burn", default-features =
   "tui",
   "cuda",
   "sqlite"]}
-hf-hub = "0.4"
-log = "0.4"
-polars = {version = "0.48", features = ["parquet", "lazy"]}
 tokenizers = {version = "0.21", features = ["http"]}
-
-# [workspace]
-# members = ["cuda-invalid-repro"]
