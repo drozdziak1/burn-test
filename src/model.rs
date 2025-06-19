@@ -70,7 +70,6 @@ impl<B: Backend> Transformer<B> {
         y_gt: Tensor<B, 2, Int>,
     ) -> ClassificationOutput<B> {
         let y_hat = self.forward(x);
-	println!("y_hat shape: {:?}", y_hat.dims());
 
 	let y_hat_flattened = y_hat.flatten(0, 1);
 

@@ -3,15 +3,16 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use burn::{
     data::{
-        dataloader::{DataLoaderBuilder, MultiThreadDataLoader},
+        dataloader::MultiThreadDataLoader,
         dataset::{
             HuggingfaceDatasetLoader,
             transform::{MapperDataset, PartialDataset},
         },
     },
+    lr_scheduler::noam::NoamLrSchedulerConfig,
     optim::AdamWConfig,
     prelude::*,
     record::CompactRecorder,
@@ -30,24 +31,18 @@ use crate::{
 
 impl<B: AutodiffBackend> TrainStep<FinewebBatch<B>, ClassificationOutput<B>> for Transformer<B> {
     fn step(&self, batch: FinewebBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
-	println!("train: before forward_classification");
         let item = self.forward_classification(batch.x, batch.y_gt);
 
-	println!("train: before gradients");
-	let grads = item.loss.backward();
-	println!("train: after gradients");
+        let grads = item.loss.backward();
 
-        println!("train: before output constructor");
-	let out = TrainOutput::new(self, grads, item);
-        println!("train: after output constructor");
+        let out = TrainOutput::new(self, grads, item);
 
-	out
+        out
     }
 }
 
 impl<B: Backend> ValidStep<FinewebBatch<B>, ClassificationOutput<B>> for Transformer<B> {
     fn step(&self, batch: FinewebBatch<B>) -> ClassificationOutput<B> {
-	println!("valid: before forward_classification");
         self.forward_classification(batch.x, batch.y_gt)
     }
 }
@@ -62,12 +57,16 @@ pub struct TrainingConfig {
     pub num_test_epochs: usize,
     #[config(default = 2)]
     pub batch_size: usize,
-    #[config(default = 4)]
+    #[config(default = 16)]
     pub num_workers: usize,
     #[config(default = 0xdeadbeef)]
     pub rng_seed: u64,
     #[config(default = 3e-4)]
-    pub lr: f64,
+    pub init_lr: f64,
+    #[config(default = 2000)]
+    pub warmup_steps: usize,
+    #[config(default = 40)]
+    pub grad_accum_steps: usize,
 }
 
 fn create_artifact_dir(artifact_dir: &str) {
@@ -92,7 +91,7 @@ pub fn train<B: AutodiffBackend>(
 
     let full_dataset = HuggingfaceDatasetLoader::new("HuggingFaceFW/fineweb")
         .with_subset("sample-10BT")
-	.with_use_python_venv(false)
+        .with_use_python_venv(false)
         .dataset("train")
         .expect("Could not load dataset");
 
@@ -104,14 +103,21 @@ pub fn train<B: AutodiffBackend>(
 
     println!("Using delim {}", delim);
 
-    let tokenized_dataset = Arc::new(MapperDataset::new(full_dataset, FinewebMapper::new(tokenizer)));
+    let tokenized_dataset = Arc::new(MapperDataset::new(
+        full_dataset,
+        FinewebMapper::new(tokenizer),
+    ));
 
     let dataset_train = PartialDataset::new(
         tokenized_dataset.clone(),
         config.num_test_epochs * config.batch_size + 1,
         config.num_epochs + config.num_test_epochs * config.batch_size,
     );
-    let dataset_test = PartialDataset::new(tokenized_dataset, 0, config.num_test_epochs * config.batch_size);
+    let dataset_test = PartialDataset::new(
+        tokenized_dataset,
+        0,
+        config.num_test_epochs * config.batch_size,
+    );
 
     let dataloader_train = MultiThreadDataLoader::new(
         Box::new(PackedBatchStrategy::new(
@@ -148,10 +154,15 @@ pub fn train<B: AutodiffBackend>(
         .devices(vec![device.clone()])
         .num_epochs(config.num_epochs)
         .summary()
+        .grads_accumulation(40 / config.grad_accum_steps)
         .build(
             config.model.init_transformer::<B>(&device),
             config.optimizer.init(),
-            config.lr,
+            NoamLrSchedulerConfig::new(config.init_lr)
+                .with_model_size(config.model.embed_dim)
+                .with_warmup_steps(config.warmup_steps)
+                .init()
+                .map_err(|e| anyhow!(e))?,
         );
 
     let model_trained = learner.fit(Arc::new(dataloader_train), Arc::new(dataloader_test));

@@ -1,17 +1,14 @@
-use anyhow::{Result, anyhow, bail};
 use burn::{
-    data::{dataloader::{batcher::Batcher, BatchStrategy}, dataset::transform::Mapper},
+    data::{
+        dataloader::{BatchStrategy, batcher::Batcher},
+        dataset::transform::Mapper,
+    },
     prelude::Backend,
-    tensor::{s, Int, Tensor},
+    tensor::{Int, Tensor, s},
 };
-use hf_hub::api::sync::{Api, ApiRepo};
-use log::{debug, warn};
-use polars::prelude::*;
-use tokenizers::{InputSequence, Tokenizer};
+use tokenizers::Tokenizer;
 
-use std::{fs::File, io::Read, num::NonZeroUsize, path::PathBuf};
-
-use burn::data::dataset::HuggingfaceDatasetLoader;
+use std::num::NonZeroUsize;
 
 pub struct PackedBatchStrategy<T> {
     batch_size: NonZeroUsize,
@@ -126,15 +123,16 @@ pub struct FinewebMapper {
 
 impl FinewebMapper {
     pub fn new(tokenizer: Tokenizer) -> Self {
-	Self {
-	    tokenizer
-	}
+        Self { tokenizer }
     }
 }
 
 impl Mapper<String, Vec<u32>> for FinewebMapper {
     fn map(&self, item: &String) -> Vec<u32> {
-
-	self.tokenizer.encode(item.as_str(), true).expect("Could not map using tokenizer").get_ids().to_vec()
+        self.tokenizer
+            .encode(item.as_str(), true)
+            .expect("Could not map using tokenizer")
+            .get_ids()
+            .to_vec()
     }
 }
