@@ -52,12 +52,12 @@ pub struct TrainingConfig {
     pub model: TrafoConfig,
     pub optimizer: AdamWConfig,
     #[config(default = 600_000)]
-    pub num_epochs: usize,
+    pub num_steps: usize,
     #[config(default = 100)]
-    pub num_test_epochs: usize,
-    #[config(default = 2)]
+    pub num_test_steps: usize,
+    #[config(default = 4)]
     pub batch_size: usize,
-    #[config(default = 16)]
+    #[config(default = 32)]
     pub num_workers: usize,
     #[config(default = 0xdeadbeef)]
     pub rng_seed: u64,
@@ -77,7 +77,7 @@ fn create_artifact_dir(artifact_dir: &str) {
 pub fn train<B: AutodiffBackend>(
     artifact_dir: &str,
     config: TrainingConfig,
-    device: B::Device,
+    devices: Vec<B::Device>,
 ) -> Result<()> {
     create_artifact_dir(artifact_dir);
 
@@ -110,13 +110,13 @@ pub fn train<B: AutodiffBackend>(
 
     let dataset_train = PartialDataset::new(
         tokenized_dataset.clone(),
-        config.num_test_epochs * config.batch_size + 1,
-        config.num_epochs + config.num_test_epochs * config.batch_size,
+        config.num_test_steps + 1,
+        config.num_steps + config.num_test_steps,
     );
     let dataset_test = PartialDataset::new(
         tokenized_dataset,
         0,
-        config.num_test_epochs * config.batch_size,
+        config.num_test_steps,
     );
 
     let dataloader_train = MultiThreadDataLoader::new(
@@ -128,7 +128,7 @@ pub fn train<B: AutodiffBackend>(
         Arc::new(dataset_train),
         batcher.clone(),
         config.num_workers,
-        device.clone(),
+        devices[0].clone(),
         None,
     );
 
@@ -141,7 +141,7 @@ pub fn train<B: AutodiffBackend>(
         Arc::new(dataset_test),
         batcher.clone(),
         config.num_workers,
-        device.clone(),
+        devices[0].clone(),
         None,
     );
 
@@ -151,12 +151,12 @@ pub fn train<B: AutodiffBackend>(
         .metric_train_numeric(LossMetric::new())
         .metric_valid_numeric(LossMetric::new())
         .with_file_checkpointer(CompactRecorder::new())
-        .devices(vec![device.clone()])
-        .num_epochs(config.num_epochs)
+        .devices(devices.clone())
+        .num_epochs(config.num_steps / (config.batch_size * config.grad_accum_steps))
         .summary()
-        .grads_accumulation(40 / config.grad_accum_steps)
+        .grads_accumulation(config.grad_accum_steps / config.batch_size)
         .build(
-            config.model.init_transformer::<B>(&device),
+            config.model.init_transformer::<B>(&devices[0]),
             config.optimizer.init(),
             NoamLrSchedulerConfig::new(config.init_lr)
                 .with_model_size(config.model.embed_dim)

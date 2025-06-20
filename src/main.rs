@@ -4,7 +4,7 @@ mod train;
 
 use anyhow::Result;
 use burn::{
-    backend::{Autodiff, Cuda},
+    backend::{cuda::CudaDevice, Autodiff, Cuda},
     grad_clipping::GradientClippingConfig,
     optim::AdamWConfig,
 };
@@ -12,20 +12,20 @@ use model::TrafoConfig;
 use train::TrainingConfig;
 
 fn main() -> Result<()> {
-    type MyBackend = Cuda<f32, i32>;
+    type MyBackend = Cuda<half::f16, i32>;
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
-    let device = burn::backend::cuda::CudaDevice::default();
+    let devices = vec![CudaDevice::new(0), CudaDevice::new(1)];
 
     let artifact_dir = "/tmp/burn-test";
 
     crate::train::train::<MyAutodiffBackend>(
         artifact_dir,
         TrainingConfig::new(
-            TrafoConfig::new(1024, 50257, 768, 12, 12, 4 * 768),
+            TrafoConfig::new(50257),
             AdamWConfig::new().with_grad_clipping(Some(GradientClippingConfig::Norm(1.0))),
         ),
-        device.clone(),
+        devices,
     )?;
 
     Ok(())

@@ -85,11 +85,16 @@ impl<B: Backend> Transformer<B> {
 
 #[derive(Config, Debug)]
 pub struct TrafoConfig {
+    #[config(default = 1024)]
     pub ctx_size: usize,
     pub vocab_size: usize,
+    #[config(default = 768)]
     pub embed_dim: usize,
+    #[config(default = 12)]
     pub num_blocks: usize,
+    #[config(default = 12)]
     pub num_heads: usize,
+    #[config(default = 3072)]
     pub ff_dim: usize,
 }
 

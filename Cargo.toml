@@ -15,4 +15,5 @@ burn = {path = "/home/drozdziak1/code/rust/burn/crates/burn", default-features =
   "tui",
   "cuda",
   "sqlite"]}
+half = "2.6.0"
 tokenizers = {version = "0.21", features = ["http"]}
