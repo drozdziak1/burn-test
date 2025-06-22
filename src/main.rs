@@ -15,7 +15,9 @@ fn main() -> Result<()> {
     type MyBackend = Cuda<half::f16, i32>;
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
-    let devices = vec![CudaDevice::new(0), CudaDevice::new(1)];
+    env_logger::init();
+
+    let devices = vec![CudaDevice::new(0)]; // , CudaDevice::new(1)];
 
     let artifact_dir = "/tmp/burn-test";
 
