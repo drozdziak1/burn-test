@@ -6,6 +6,7 @@ use burn::{
     prelude::Backend,
     tensor::{Int, Tensor, s},
 };
+use log::{debug, trace};
 use tokenizers::Tokenizer;
 
 use std::num::NonZeroUsize;
@@ -44,31 +45,29 @@ impl<T: Send + Clone + 'static> BatchStrategy<Vec<T>> for PackedBatchStrategy<T>
             }
         }
 
+        debug!(
+            "PackedBatchStrategy: Adding {} items to shortest buffer (currently holds {} items)",
+            item.len(),
+            shortest_buf.len()
+        );
+
         shortest_buf.append(&mut item);
     }
 
-    fn batch(&mut self, force: bool) -> Option<Vec<Vec<T>>> {
-        // Cheap: move on if force
-        if !force {
-            // Less cheap: check if we have enough data for a batch
-            let any_buf_too_short = self
-                .buffers
-                .iter()
-                .any(|buf| buf.len() < self.batch_item_size);
+    fn batch(&mut self, _force: bool) -> Option<Vec<Vec<T>>> {
+        // Check if we have enough data for a batch
+        let any_buf_too_short = self
+            .buffers
+            .iter()
+            .any(|buf| buf.len() < self.batch_item_size);
 
-            if any_buf_too_short {
-                return None;
-            }
+        if any_buf_too_short {
+            return None;
         }
 
         let mut batch: Vec<Vec<T>> = Vec::new();
 
         for buf in self.buffers.iter_mut() {
-            // Skip incomplete buffers to avoid split_at panic (only possible if force)
-            if force && buf.len() < self.batch_item_size {
-                continue;
-            }
-
             let (new_batch_item, new_buf) = buf.split_at(self.batch_item_size);
 
             batch.push(new_batch_item.to_vec());
@@ -98,6 +97,8 @@ pub struct FinewebBatcher;
 
 impl<B: Backend> Batcher<B, Vec<u32>, FinewebBatch<B>> for FinewebBatcher {
     fn batch(&self, items: Vec<Vec<u32>>, device: &B::Device) -> FinewebBatch<B> {
+        trace!("FinewebBatcher: processing {} items", items.len());
+
         let tensors_vec = items
             .iter()
             .map(|item| {

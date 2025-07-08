@@ -22,7 +22,7 @@
           };
         };
         python-env = pkgs.python3.withPackages
-          (ps: with ps; [ sqlalchemy pyarrow datasets ipdb ]);
+          (ps: with ps; [ sqlalchemy pyarrow datasets ipdb torchWithCuda ]);
       in {
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
@@ -32,7 +32,6 @@
             openssl.dev
             pkg-config
             cargo-watch
-            # libtorch-bin
             python-env
             rust-bin.stable."1.86.0".default
             rust-analyzer
@@ -49,7 +48,7 @@
           LD_LIBRARY_PATH = "${pkgs.addDriverRunpath.driverLink}/lib:${
               pkgs.lib.makeLibraryPath nativeBuildInputs
             }";
-          INCLUDE_PATH = pkgs.lib.makeIncludePath nativeBuildInputs;
+          LIBTORCH_USE_PYTORCH = "1";
         };
       });
 }

@@ -3,17 +3,20 @@ name = "burn-test"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
 [dependencies]
 anyhow = "1.0"
 # burn = { version = "~0.17", features = ["dataset", "train", "cuda", "autotune", "fusion", "sqlite-bundled"] }
-burn = {git = "https://github.com/tracel-ai/burn", branch = "main", default-features = false, features = [
+burn = {git = "https://github.com/tracel-ai/burn", branch = "main", default-features = true, features = [
   "std",
   "dataset",
-  "fusion",
-  "autotune", # Causes CUDA_ERROR_INVALID_VALUE
+  # "fusion",
+  # "autotune",
   "train",
   "tui",
   "cuda",
+  "tch",
   "sqlite"]}
 env_logger = "0.11.8"
 half = "2.6.0"

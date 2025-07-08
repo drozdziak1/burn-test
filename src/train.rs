@@ -8,8 +8,7 @@ use burn::{
     data::{
         dataloader::MultiThreadDataLoader,
         dataset::{
-            HuggingfaceDatasetLoader,
-            transform::{MapperDataset, PartialDataset},
+            transform::{MapperDataset, PartialDataset, SamplerDataset}, HuggingfaceDatasetLoader
         },
     },
     lr_scheduler::noam::NoamLrSchedulerConfig,
@@ -18,8 +17,7 @@ use burn::{
     record::CompactRecorder,
     tensor::backend::AutodiffBackend,
     train::{
-        ClassificationOutput, LearnerBuilder, TrainOutput, TrainStep, ValidStep,
-        metric::{AccuracyMetric, LossMetric},
+        metric::{AccuracyMetric, CudaMetric, LearningRateMetric, LossMetric}, ClassificationOutput, LearnerBuilder, TrainOutput, TrainStep, ValidStep
     },
 };
 use tokenizers::Tokenizer;
@@ -52,20 +50,22 @@ pub struct TrainingConfig {
     pub model: TrafoConfig,
     pub optimizer: AdamWConfig,
     #[config(default = 600_000)]
-    pub num_steps: usize,
-    #[config(default = 100)]
-    pub num_test_steps: usize,
-    #[config(default = 4)]
+    pub num_train_steps: usize,
+    #[config(default = 5000)]
+    pub num_steps_per_epoch: usize,
+    #[config(default = 10)]
+    pub num_val_steps: usize,
+    #[config(default = 10)]
     pub batch_size: usize,
-    #[config(default = 32)]
+    #[config(default = 8)]
     pub num_workers: usize,
     #[config(default = 0xdeadbeef)]
     pub rng_seed: u64,
     #[config(default = 3e-4)]
-    pub init_lr: f64,
+    pub max_lr: f64,
     #[config(default = 2000)]
     pub warmup_steps: usize,
-    #[config(default = 40)]
+    #[config(default = 10)]
     pub grad_accum_steps: usize,
 }
 
@@ -110,13 +110,13 @@ pub fn train<B: AutodiffBackend>(
 
     let dataset_train = PartialDataset::new(
         tokenized_dataset.clone(),
-        config.num_test_steps + 1,
-        config.num_steps + config.num_test_steps,
+        config.num_val_steps + 1,
+        config.num_train_steps + config.num_val_steps + 1,
     );
     let dataset_test = PartialDataset::new(
         tokenized_dataset,
         0,
-        config.num_test_steps,
+        config.num_val_steps,
     );
 
     let dataloader_train = MultiThreadDataLoader::new(
@@ -125,7 +125,7 @@ pub fn train<B: AutodiffBackend>(
             config.model.ctx_size + 1,
             Some(delim),
         )),
-        Arc::new(dataset_train),
+        Arc::new(SamplerDataset::with_replacement(dataset_train, config.num_steps_per_epoch)),
         batcher.clone(),
         config.num_workers,
         devices[0].clone(),
@@ -146,19 +146,22 @@ pub fn train<B: AutodiffBackend>(
     );
 
     let learner = LearnerBuilder::new(artifact_dir)
+        .metric_train(CudaMetric::new())
+        .metric_valid(CudaMetric::new())
         .metric_train_numeric(AccuracyMetric::new())
         .metric_valid_numeric(AccuracyMetric::new())
         .metric_train_numeric(LossMetric::new())
         .metric_valid_numeric(LossMetric::new())
+        .metric_train_numeric(LearningRateMetric::new())
         .with_file_checkpointer(CompactRecorder::new())
         .devices(devices.clone())
-        .num_epochs(config.num_steps / (config.batch_size * config.grad_accum_steps))
+        .num_epochs(config.num_train_steps / config.num_steps_per_epoch)
         .summary()
-        .grads_accumulation(config.grad_accum_steps / config.batch_size)
+        .grads_accumulation(config.grad_accum_steps)
         .build(
             config.model.init_transformer::<B>(&devices[0]),
             config.optimizer.init(),
-            NoamLrSchedulerConfig::new(config.init_lr)
+            NoamLrSchedulerConfig::new(config.max_lr * config.grad_accum_steps as f64)
                 .with_model_size(config.model.embed_dim)
                 .with_warmup_steps(config.warmup_steps)
                 .init()
