@@ -51,11 +51,11 @@ pub struct TrainingConfig {
     pub optimizer: AdamWConfig,
     #[config(default = 600_000)]
     pub num_train_steps: usize,
-    #[config(default = 5000)]
+    #[config(default = 10_000)]
     pub num_steps_per_epoch: usize,
-    #[config(default = 10)]
+    #[config(default = 200)]
     pub num_val_steps: usize,
-    #[config(default = 10)]
+    #[config(default = 9)]
     pub batch_size: usize,
     #[config(default = 8)]
     pub num_workers: usize,
@@ -63,9 +63,9 @@ pub struct TrainingConfig {
     pub rng_seed: u64,
     #[config(default = 3e-4)]
     pub max_lr: f64,
-    #[config(default = 2000)]
+    #[config(default = 2_000)]
     pub warmup_steps: usize,
-    #[config(default = 10)]
+    #[config(default = 50)]
     pub grad_accum_steps: usize,
 }
 
@@ -157,7 +157,7 @@ pub fn train<B: AutodiffBackend>(
         .devices(devices.clone())
         .num_epochs(config.num_train_steps / config.num_steps_per_epoch)
         .summary()
-        .grads_accumulation(config.grad_accum_steps)
+        .grads_accumulation(config.grad_accum_steps / devices.len())
         .build(
             config.model.init_transformer::<B>(&devices[0]),
             config.optimizer.init(),
