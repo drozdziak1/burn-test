@@ -32,6 +32,7 @@
             openssl.dev
             pkg-config
             cargo-watch
+            cargo-flamegraph
             python-env
             rust-bin.stable."1.86.0".default
             rust-analyzer
